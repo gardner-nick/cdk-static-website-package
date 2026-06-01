@@ -48,6 +48,17 @@ describe('StaticWebsite', () => {
     });
   });
 
+  test('redirects HTTP viewers to HTTPS on the default behavior', () => {
+    const template = synth();
+    template.hasResourceProperties('AWS::CloudFront::Distribution', {
+      DistributionConfig: Match.objectLike({
+        DefaultCacheBehavior: Match.objectLike({
+          ViewerProtocolPolicy: 'redirect-to-https',
+        }),
+      }),
+    });
+  });
+
   test('allowedCountries override is respected', () => {
     const template = synth({ allowedCountries: ['US', 'CA', 'GB'] });
     template.hasResourceProperties('AWS::CloudFront::Distribution', {
