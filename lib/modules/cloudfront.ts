@@ -49,6 +49,7 @@ export class WebsiteCloudFront extends Construct {
     this.distribution = new cloudfront.Distribution(this, id, {
       defaultBehavior: {
         origin: cloudfrontOrigins.S3BucketOrigin.withOriginAccessControl(props.bucket),
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
       },
       geoRestriction: cloudfront.GeoRestriction.allowlist(...countries),
       comment: id,
