@@ -106,6 +106,55 @@ describe('StaticWebsite', () => {
     template.resourceCountIs('AWS::CertificateManager::Certificate', 0);
   });
 
+  test('wildcard: true adds the wildcard alias to the distribution', () => {
+    const template = synth({ wildcard: true });
+    template.hasResourceProperties('AWS::CloudFront::Distribution', {
+      DistributionConfig: Match.objectLike({
+        Aliases: ['www.example.com', '*.www.example.com'],
+      }),
+    });
+  });
+
+  test('wildcard: true adds the wildcard SAN to a created certificate', () => {
+    const template = synth({ acmCertArn: undefined, createAcmCert: true, wildcard: true });
+    template.hasResourceProperties('AWS::CertificateManager::Certificate', {
+      DomainName: 'www.example.com',
+      SubjectAlternativeNames: ['*.www.example.com'],
+      ValidationMethod: 'DNS',
+    });
+  });
+
+  test('wildcard: true creates a wildcard A-record alongside the base record', () => {
+    const template = synth({ wildcard: true });
+    template.hasResourceProperties('AWS::Route53::RecordSet', {
+      Type: 'A',
+      Name: '*.www.example.com.',
+      AliasTarget: Match.objectLike({ DNSName: Match.anyValue() }),
+    });
+    template.hasResourceProperties('AWS::Route53::RecordSet', {
+      Type: 'A',
+      Name: 'www.example.com.',
+    });
+  });
+
+  test('wildcard on the apex (no subDomain) uses *.<hostedZone>', () => {
+    const template = synth({ subDomain: undefined, wildcard: true });
+    template.hasResourceProperties('AWS::CloudFront::Distribution', {
+      DistributionConfig: Match.objectLike({
+        Aliases: ['example.com', '*.example.com'],
+      }),
+    });
+    template.hasResourceProperties('AWS::Route53::RecordSet', {
+      Type: 'A',
+      Name: '*.example.com.',
+    });
+  });
+
+  test('no wildcard alias or record when wildcard is omitted', () => {
+    const template = synth();
+    template.resourceCountIs('AWS::Route53::RecordSet', 1);
+  });
+
   test('throws when neither acmCertArn nor createAcmCert is set', () => {
     expect(() => synth({ acmCertArn: undefined })).toThrow(
       /exactly one of `acmCertArn` or `createAcmCert: true`/,

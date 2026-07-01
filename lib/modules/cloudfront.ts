@@ -13,6 +13,7 @@ export interface WebsiteCloudFrontProps {
   readonly acmCertArn?: string;
   readonly createAcmCert?: boolean;
   readonly hostedZoneRef?: route53.IHostedZone;
+  readonly wildcard?: boolean;
 }
 
 export class WebsiteCloudFront extends Construct {
@@ -32,6 +33,8 @@ export class WebsiteCloudFront extends Construct {
 
     const subDomain = props.subDomain ?? '';
     const domain = subDomain !== '' ? `${subDomain}.${props.hostedZone}` : props.hostedZone;
+    const wildcardDomain = `*.${domain}`;
+    const domainNames = props.wildcard ? [domain, wildcardDomain] : [domain];
     const countries = props.allowedCountries ?? ['US', 'CA'];
 
     if (hasArn) {
@@ -42,6 +45,7 @@ export class WebsiteCloudFront extends Construct {
         route53.HostedZone.fromLookup(this, 'CertZoneLookup', { domainName: props.hostedZone });
       this.certificate = new acm.Certificate(this, 'Cert', {
         domainName: domain,
+        subjectAlternativeNames: props.wildcard ? [wildcardDomain] : undefined,
         validation: acm.CertificateValidation.fromDns(zone),
       });
     }
@@ -53,7 +57,7 @@ export class WebsiteCloudFront extends Construct {
       },
       geoRestriction: cloudfront.GeoRestriction.allowlist(...countries),
       comment: id,
-      domainNames: [domain],
+      domainNames,
       certificate: this.certificate,
       errorResponses: [
         { httpStatus: 404, responseHttpStatus: 200, responsePagePath: '/index.html' },
