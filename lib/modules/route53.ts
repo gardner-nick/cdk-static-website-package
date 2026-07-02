@@ -8,6 +8,7 @@ export interface WebsiteRoute53Props {
   readonly distribution: cloudfront.Distribution;
   readonly subDomain?: string;
   readonly hostedZoneRef?: route53.IHostedZone;
+  readonly wildcard?: boolean;
 }
 
 export class WebsiteRoute53 extends Construct {
@@ -22,10 +23,22 @@ export class WebsiteRoute53 extends Construct {
         domainName: props.hostedZone,
       });
 
+    const target = route53.RecordTarget.fromAlias(
+      new route53Targets.CloudFrontTarget(props.distribution),
+    );
+
     new route53.ARecord(this, `${id}-Route53Record`, {
       zone: this.zone,
       recordName: props.subDomain,
-      target: route53.RecordTarget.fromAlias(new route53Targets.CloudFrontTarget(props.distribution)),
+      target,
     });
+
+    if (props.wildcard) {
+      new route53.ARecord(this, `${id}-Route53WildcardRecord`, {
+        zone: this.zone,
+        recordName: props.subDomain ? `*.${props.subDomain}` : '*',
+        target,
+      });
+    }
   }
 }

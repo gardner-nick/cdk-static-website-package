@@ -15,6 +15,7 @@ export interface StaticWebsiteProps {
   readonly allowedCountries?: string[];
   readonly acmCertArn?: string;
   readonly createAcmCert?: boolean;
+  readonly wildcard?: boolean;
 }
 
 export class StaticWebsite extends Construct {
@@ -54,6 +55,7 @@ export class StaticWebsite extends Construct {
       acmCertArn: props.acmCertArn,
       createAcmCert: props.createAcmCert,
       hostedZoneRef: this.hostedZoneRef,
+      wildcard: props.wildcard,
     });
     this.distribution = websiteCloudFront.distribution;
     this.certificate = websiteCloudFront.certificate;
@@ -63,6 +65,7 @@ export class StaticWebsite extends Construct {
       distribution: websiteCloudFront.distribution,
       subDomain: props.subDomain,
       hostedZoneRef: this.hostedZoneRef,
+      wildcard: props.wildcard,
     });
   }
 }

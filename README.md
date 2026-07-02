@@ -65,6 +65,31 @@ new StaticWebsite(this, 'Site', {
 
 Exactly one of `acmCertArn` or `createAcmCert: true` must be set — the construct throws at synth time if both or neither are provided.
 
+## Wildcard subdomains
+
+Set `wildcard: true` to serve every subdomain of your site's domain from the same distribution — useful for catch-all subdomains or per-branch preview URLs that all point at the same bucket.
+
+```ts
+new StaticWebsite(this, 'Site', {
+  stackPrefix: 'mysite',
+  envType: 'prod',
+  hostedZone: 'example.com',
+  subDomain: 'www',
+  wildcard: true,
+  createAcmCert: true,
+});
+```
+
+This adds, relative to the non-wildcard setup:
+
+- `*.www.example.com` as an extra CloudFront alias (or `*.example.com` when `subDomain` is omitted).
+- A second wildcard A-record in Route53 aliased to the distribution.
+- When `createAcmCert: true`, the wildcard name as a SAN on the generated certificate.
+
+**If you supply `acmCertArn` instead**, the imported certificate must already cover the wildcard name (e.g. issued for `www.example.com` with `*.www.example.com` as a SAN) — CloudFront rejects aliases the cert doesn't cover at deploy time. The construct can't verify this at synth.
+
+Note that only one subdomain level is served (`app.www.example.com`, not `a.b.www.example.com`): ACM wildcard certs and CloudFront aliases cover a single label. The wildcard DNS record, however, matches *any* depth (per RFC 4592), so deeper names like `a.b.www.example.com` still resolve to the distribution — visitors hitting one get a TLS certificate mismatch or a CloudFront error rather than NXDOMAIN.
+
 ## Adding a backend
 
 `StaticWebsite` is a `Construct`, not a `Stack` — drop it into any stack alongside your own resources:
@@ -112,6 +137,7 @@ Composed construct that wires bucket + distribution + DNS record.
 | `acmCertArn` | `string` | one of | — | Existing ACM cert ARN in `us-east-1` |
 | `createAcmCert` | `boolean` | one of | `false` | Create a new DNS-validated cert (stack must be in `us-east-1`) |
 | `allowedCountries` | `string[]` | no | `['US', 'CA']` | CloudFront geo-allowlist |
+| `wildcard` | `boolean` | no | `false` | Also serve `*.<domain>` from the same distribution (see below) |
 
 Exposes `bucket: s3.Bucket` and `distribution: cloudfront.Distribution` for further customization.
 
