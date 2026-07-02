@@ -16,6 +16,14 @@ export interface StaticWebsiteProps {
   readonly acmCertArn?: string;
   readonly createAcmCert?: boolean;
   readonly wildcard?: boolean;
+  /**
+   * Rewrite origin 403/404 responses to `/index.html` with a 200. Disable when
+   * attaching non-SPA behaviors whose error statuses must pass through.
+   * @default true
+   */
+  readonly spaFallback?: boolean;
+  /** CloudFront Functions for the default (S3) behavior only. */
+  readonly defaultBehaviorFunctionAssociations?: cloudfront.FunctionAssociation[];
 }
 
 export class StaticWebsite extends Construct {
@@ -56,6 +64,8 @@ export class StaticWebsite extends Construct {
       createAcmCert: props.createAcmCert,
       hostedZoneRef: this.hostedZoneRef,
       wildcard: props.wildcard,
+      spaFallback: props.spaFallback,
+      defaultBehaviorFunctionAssociations: props.defaultBehaviorFunctionAssociations,
     });
     this.distribution = websiteCloudFront.distribution;
     this.certificate = websiteCloudFront.certificate;

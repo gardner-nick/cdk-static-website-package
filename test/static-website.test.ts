@@ -1,4 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
+import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { StaticWebsite, StaticWebsiteProps } from '../lib/modules/static-website';
 
@@ -106,29 +107,29 @@ describe('StaticWebsite', () => {
     template.resourceCountIs('AWS::CertificateManager::Certificate', 0);
   });
 
-  test('wildcard: true adds the wildcard alias to the distribution', () => {
+  test('wildcard: true adds the zone-level wildcard alias to the distribution', () => {
     const template = synth({ wildcard: true });
     template.hasResourceProperties('AWS::CloudFront::Distribution', {
       DistributionConfig: Match.objectLike({
-        Aliases: ['www.example.com', '*.www.example.com'],
+        Aliases: ['www.example.com', '*.example.com'],
       }),
     });
   });
 
-  test('wildcard: true adds the wildcard SAN to a created certificate', () => {
+  test('wildcard: true adds the zone-level wildcard SAN to a created certificate', () => {
     const template = synth({ acmCertArn: undefined, createAcmCert: true, wildcard: true });
     template.hasResourceProperties('AWS::CertificateManager::Certificate', {
       DomainName: 'www.example.com',
-      SubjectAlternativeNames: ['*.www.example.com'],
+      SubjectAlternativeNames: ['*.example.com'],
       ValidationMethod: 'DNS',
     });
   });
 
-  test('wildcard: true creates a wildcard A-record alongside the base record', () => {
+  test('wildcard: true creates a zone-level wildcard A-record alongside the base record', () => {
     const template = synth({ wildcard: true });
     template.hasResourceProperties('AWS::Route53::RecordSet', {
       Type: 'A',
-      Name: '*.www.example.com.',
+      Name: '*.example.com.',
       AliasTarget: Match.objectLike({ DNSName: Match.anyValue() }),
     });
     template.hasResourceProperties('AWS::Route53::RecordSet', {
@@ -153,6 +154,53 @@ describe('StaticWebsite', () => {
   test('no wildcard alias or record when wildcard is omitted', () => {
     const template = synth();
     template.resourceCountIs('AWS::Route53::RecordSet', 1);
+  });
+
+  test('sets index.html as the default root object', () => {
+    const template = synth();
+    template.hasResourceProperties('AWS::CloudFront::Distribution', {
+      DistributionConfig: Match.objectLike({
+        DefaultRootObject: 'index.html',
+      }),
+    });
+  });
+
+  test('spaFallback: false omits the SPA custom error responses', () => {
+    const template = synth({ spaFallback: false });
+    template.hasResourceProperties('AWS::CloudFront::Distribution', {
+      DistributionConfig: Match.objectLike({
+        CustomErrorResponses: Match.absent(),
+      }),
+    });
+  });
+
+  test('defaultBehaviorFunctionAssociations attaches to the default behavior only', () => {
+    const app = new cdk.App();
+    const stack = new cdk.Stack(app, 'TestStack', { env: TEST_ENV });
+    const fn = new cloudfront.Function(stack, 'RewriteFn', {
+      code: cloudfront.FunctionCode.fromInline('function handler(event) { return event.request; }'),
+    });
+    new StaticWebsite(stack, 'Site', {
+      stackPrefix: 'test',
+      envType: 'test',
+      hostedZone: 'example.com',
+      subDomain: 'www',
+      acmCertArn: 'arn:aws:acm:us-east-1:111122223333:certificate/abcd-1234',
+      spaFallback: false,
+      defaultBehaviorFunctionAssociations: [
+        { function: fn, eventType: cloudfront.FunctionEventType.VIEWER_REQUEST },
+      ],
+    });
+    const template = Template.fromStack(stack);
+    template.hasResourceProperties('AWS::CloudFront::Distribution', {
+      DistributionConfig: Match.objectLike({
+        DefaultCacheBehavior: Match.objectLike({
+          FunctionAssociations: [
+            Match.objectLike({ EventType: 'viewer-request' }),
+          ],
+        }),
+      }),
+    });
   });
 
   test('throws when neither acmCertArn nor createAcmCert is set', () => {

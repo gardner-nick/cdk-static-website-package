@@ -43,7 +43,8 @@ class MySiteStack extends cdk.Stack {
 ### Defaults worth knowing
 
 - **Geo-restriction is US + CA only.** Override with `allowedCountries: ['US', 'CA', 'GB', ...]` if you need a wider audience.
-- **SPA error rewrites:** 403 and 404 from the origin both rewrite to `/index.html` with a 200, which is what client-side routers expect.
+- **SPA error rewrites:** 403 and 404 from the origin both rewrite to `/index.html` with a 200, which is what client-side routers expect. These are distribution-wide — if you attach additional behaviors (e.g. an `/api/*` path via `distribution.addBehavior`) whose error statuses must reach the viewer untouched, set `spaFallback: false` and scope the fallback to the S3 behavior with a viewer-request function via `defaultBehaviorFunctionAssociations` instead.
+- **`index.html` is the default root object**, so `https://<domain>/` serves the SPA shell without relying on the error rewrites.
 - **Bucket removal policy is `DESTROY`.** Suitable for static site assets redeployed from CI; don't store anything you can't reproduce.
 - **Bucket name = `<stackPrefix>-bucket-<envType>`.** S3 bucket names are globally unique, so pick a `stackPrefix` unlikely to collide.
 
@@ -67,28 +68,33 @@ Exactly one of `acmCertArn` or `createAcmCert: true` must be set — the constru
 
 ## Wildcard subdomains
 
-Set `wildcard: true` to serve every subdomain of your site's domain from the same distribution — useful for catch-all subdomains or per-branch preview URLs that all point at the same bucket.
+Set `wildcard: true` to serve every subdomain of the hosted zone from the same distribution — useful for multi-tenant sites (one distinguished subdomain like `admin` plus a catch-all for per-tenant subdomains) or per-branch preview URLs that all point at the same bucket.
 
 ```ts
 new StaticWebsite(this, 'Site', {
   stackPrefix: 'mysite',
   envType: 'prod',
   hostedZone: 'example.com',
-  subDomain: 'www',
+  subDomain: 'admin',
   wildcard: true,
   createAcmCert: true,
 });
 ```
 
-This adds, relative to the non-wildcard setup:
+The wildcard is always at the **hosted-zone level** (`*.example.com`), regardless of `subDomain`. Relative to the non-wildcard setup this adds:
 
-- `*.www.example.com` as an extra CloudFront alias (or `*.example.com` when `subDomain` is omitted).
-- A second wildcard A-record in Route53 aliased to the distribution.
-- When `createAcmCert: true`, the wildcard name as a SAN on the generated certificate.
+- `*.example.com` as an extra CloudFront alias, alongside `admin.example.com` (a single-label ACM/CloudFront wildcard covers the subdomain itself too).
+- A second `*` A-record at the zone in Route53, aliased to the distribution.
+- When `createAcmCert: true`, `*.example.com` as a SAN on the generated certificate.
 
-**If you supply `acmCertArn` instead**, the imported certificate must already cover the wildcard name (e.g. issued for `www.example.com` with `*.www.example.com` as a SAN) — CloudFront rejects aliases the cert doesn't cover at deploy time. The construct can't verify this at synth.
+**If you supply `acmCertArn` instead**, the imported certificate must already cover both names (e.g. issued for `*.example.com` with `admin.example.com` as a SAN, or vice versa) — CloudFront rejects aliases the cert doesn't cover at deploy time. The construct can't verify this at synth.
 
-Note that only one subdomain level is served (`app.www.example.com`, not `a.b.www.example.com`): ACM wildcard certs and CloudFront aliases cover a single label. The wildcard DNS record, however, matches *any* depth (per RFC 4592), so deeper names like `a.b.www.example.com` still resolve to the distribution — visitors hitting one get a TLS certificate mismatch or a CloudFront error rather than NXDOMAIN.
+Two caveats:
+
+- ACM wildcard certs and CloudFront wildcard aliases cover a **single label** (`app.example.com`, not `a.b.example.com`). The wildcard DNS record matches *any* depth (per RFC 4592), so deeper names still resolve to the distribution — visitors hitting one get a TLS certificate mismatch or a CloudFront error rather than NXDOMAIN. For the same reason, a multi-label `subDomain` (e.g. `a.b`) is **not** covered by the zone-level wildcard cert — supply a cert that covers it explicitly.
+- Because the wildcard sits at the zone level, only one distribution per zone can use it: CloudFront aliases are globally unique.
+
+> **Changed in 0.1.3:** `wildcard: true` with a `subDomain` previously produced `*.<subDomain>.<zone>`; it now produces `*.<zone>`. The no-`subDomain` behavior is unchanged.
 
 ## Adding a backend
 
@@ -137,7 +143,9 @@ Composed construct that wires bucket + distribution + DNS record.
 | `acmCertArn` | `string` | one of | — | Existing ACM cert ARN in `us-east-1` |
 | `createAcmCert` | `boolean` | one of | `false` | Create a new DNS-validated cert (stack must be in `us-east-1`) |
 | `allowedCountries` | `string[]` | no | `['US', 'CA']` | CloudFront geo-allowlist |
-| `wildcard` | `boolean` | no | `false` | Also serve `*.<domain>` from the same distribution (see below) |
+| `wildcard` | `boolean` | no | `false` | Also serve `*.<hostedZone>` from the same distribution (see above) |
+| `spaFallback` | `boolean` | no | `true` | Distribution-wide 403/404 → `/index.html` rewrites; disable when adding non-SPA behaviors |
+| `defaultBehaviorFunctionAssociations` | `cloudfront.FunctionAssociation[]` | no | — | CloudFront Functions attached to the default (S3) behavior only |
 
 Exposes `bucket: s3.Bucket` and `distribution: cloudfront.Distribution` for further customization.
 
