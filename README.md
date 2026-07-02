@@ -88,7 +88,7 @@ This adds, relative to the non-wildcard setup:
 
 **If you supply `acmCertArn` instead**, the imported certificate must already cover the wildcard name (e.g. issued for `www.example.com` with `*.www.example.com` as a SAN) — CloudFront rejects aliases the cert doesn't cover at deploy time. The construct can't verify this at synth.
 
-Note the wildcard matches one level only (`app.www.example.com`, not `a.b.www.example.com`) — that's how both ACM wildcard certs and DNS wildcards behave.
+Note that only one subdomain level is served (`app.www.example.com`, not `a.b.www.example.com`): ACM wildcard certs and CloudFront aliases cover a single label. The wildcard DNS record, however, matches *any* depth (per RFC 4592), so deeper names like `a.b.www.example.com` still resolve to the distribution — visitors hitting one get a TLS certificate mismatch or a CloudFront error rather than NXDOMAIN.
 
 ## Adding a backend
 
