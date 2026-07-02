@@ -34,9 +34,11 @@ export class WebsiteRoute53 extends Construct {
     });
 
     if (props.wildcard) {
+      // Zone-level wildcard (`*.zone`), matching the distribution's alias set
+      // of [sub.zone, *.zone] — never `*.sub.zone`.
       new route53.ARecord(this, `${id}-Route53WildcardRecord`, {
         zone: this.zone,
-        recordName: props.subDomain ? `*.${props.subDomain}` : '*',
+        recordName: '*',
         target,
       });
     }

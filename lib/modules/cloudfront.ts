@@ -14,6 +14,21 @@ export interface WebsiteCloudFrontProps {
   readonly createAcmCert?: boolean;
   readonly hostedZoneRef?: route53.IHostedZone;
   readonly wildcard?: boolean;
+  /**
+   * Rewrite origin 403/404 responses to `/index.html` with a 200 — what
+   * client-side routers expect. CloudFront custom error responses are
+   * distribution-wide: disable this if you attach non-SPA behaviors to the
+   * distribution (e.g. an `/api/*` path) whose error statuses must reach the
+   * viewer untouched, and scope the fallback to the default behavior with a
+   * viewer-request function via `defaultBehaviorFunctionAssociations` instead.
+   * @default true
+   */
+  readonly spaFallback?: boolean;
+  /**
+   * CloudFront Functions to associate with the default (S3) behavior only —
+   * e.g. a viewer-request SPA rewrite when `spaFallback` is disabled.
+   */
+  readonly defaultBehaviorFunctionAssociations?: cloudfront.FunctionAssociation[];
 }
 
 export class WebsiteCloudFront extends Construct {
@@ -33,7 +48,12 @@ export class WebsiteCloudFront extends Construct {
 
     const subDomain = props.subDomain ?? '';
     const domain = subDomain !== '' ? `${subDomain}.${props.hostedZone}` : props.hostedZone;
-    const wildcardDomain = `*.${domain}`;
+    // The wildcard is always at the hosted-zone level (`*.example.com`, never
+    // `*.www.example.com`): with a subDomain the alias set is
+    // [sub.zone, *.zone] — the "one distinguished subdomain plus catch-all
+    // tenant/preview subdomains" pattern. ACM/CloudFront wildcards cover a
+    // single label, so `*.zone` also covers `sub.zone` itself.
+    const wildcardDomain = `*.${props.hostedZone}`;
     const domainNames = props.wildcard ? [domain, wildcardDomain] : [domain];
     const countries = props.allowedCountries ?? ['US', 'CA'];
 
@@ -54,15 +74,20 @@ export class WebsiteCloudFront extends Construct {
       defaultBehavior: {
         origin: cloudfrontOrigins.S3BucketOrigin.withOriginAccessControl(props.bucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        functionAssociations: props.defaultBehaviorFunctionAssociations,
       },
       geoRestriction: cloudfront.GeoRestriction.allowlist(...countries),
       comment: id,
       domainNames,
       certificate: this.certificate,
-      errorResponses: [
-        { httpStatus: 404, responseHttpStatus: 200, responsePagePath: '/index.html' },
-        { httpStatus: 403, responseHttpStatus: 200, responsePagePath: '/index.html' },
-      ],
+      defaultRootObject: 'index.html',
+      errorResponses:
+        props.spaFallback === false
+          ? undefined
+          : [
+              { httpStatus: 404, responseHttpStatus: 200, responsePagePath: '/index.html' },
+              { httpStatus: 403, responseHttpStatus: 200, responsePagePath: '/index.html' },
+            ],
       enableLogging: false,
     });
   }
