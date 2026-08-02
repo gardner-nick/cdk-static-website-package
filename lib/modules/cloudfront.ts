@@ -96,7 +96,10 @@ export class WebsiteCloudFront extends Construct {
     // `false` disables the restriction entirely; `undefined` keeps the historical
     // US/CA allowlist. Distinguishing them is why the type is `string[] | false`
     // rather than an empty array — `allowlist()` rejects zero countries anyway.
-    const countries = props.allowedCountries ?? ['US', 'CA'];
+    const geoRestriction =
+      props.allowedCountries === false
+        ? undefined
+        : cloudfront.GeoRestriction.allowlist(...(props.allowedCountries ?? ['US', 'CA']));
 
     if (hasArn) {
       this.certificate = acm.Certificate.fromCertificateArn(this, 'Cert', props.acmCertArn!);
@@ -121,7 +124,7 @@ export class WebsiteCloudFront extends Construct {
         allowedMethods: props.allowedMethods,
         compress: props.compress,
       },
-      geoRestriction: countries === false ? undefined : cloudfront.GeoRestriction.allowlist(...countries),
+      geoRestriction,
       comment: id,
       domainNames,
       certificate: this.certificate,

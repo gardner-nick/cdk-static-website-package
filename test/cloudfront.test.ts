@@ -20,10 +20,15 @@ function synth(overrides: Partial<WebsiteCloudFrontProps> = {}) {
   return Template.fromStack(stack);
 }
 
+/** The `DistributionConfig` of the single distribution in the template. */
+function distributionConfig(template: Template) {
+  const dist = Object.values(template.findResources('AWS::CloudFront::Distribution'))[0];
+  return dist.Properties.DistributionConfig;
+}
+
 /** The `DefaultCacheBehavior` of the single distribution in the template. */
 function defaultBehavior(template: Template) {
-  const dist = Object.values(template.findResources('AWS::CloudFront::Distribution'))[0];
-  return dist.Properties.DistributionConfig.DefaultCacheBehavior;
+  return distributionConfig(template).DefaultCacheBehavior;
 }
 
 describe('WebsiteCloudFront', () => {
@@ -38,8 +43,7 @@ describe('WebsiteCloudFront', () => {
     });
 
     test('sets no price class, and leaves http version at CDK’s http2', () => {
-      const config = Object.values(synth().findResources('AWS::CloudFront::Distribution'))[0]
-        .Properties.DistributionConfig;
+      const config = distributionConfig(synth());
       expect(config.PriceClass).toBeUndefined();
       // CDK always emits HttpVersion; omitting the prop yields its own default.
       expect(config.HttpVersion).toEqual('http2');
@@ -71,9 +75,7 @@ describe('WebsiteCloudFront', () => {
     });
 
     test('SPA fallback carries no explicit TTL', () => {
-      const config = Object.values(synth().findResources('AWS::CloudFront::Distribution'))[0]
-        .Properties.DistributionConfig;
-      expect(config.CustomErrorResponses).toEqual([
+      expect(distributionConfig(synth()).CustomErrorResponses).toEqual([
         { ErrorCode: 404, ResponseCode: 200, ResponsePagePath: '/index.html' },
         { ErrorCode: 403, ResponseCode: 200, ResponsePagePath: '/index.html' },
       ]);
@@ -141,11 +143,7 @@ describe('WebsiteCloudFront', () => {
     });
 
     test('errorResponseTtl applies to every SPA fallback response', () => {
-      const config = Object.values(
-        synth({ errorResponseTtl: cdk.Duration.minutes(5) }).findResources(
-          'AWS::CloudFront::Distribution',
-        ),
-      )[0].Properties.DistributionConfig;
+      const config = distributionConfig(synth({ errorResponseTtl: cdk.Duration.minutes(5) }));
       expect(config.CustomErrorResponses).toEqual([
         { ErrorCode: 404, ResponseCode: 200, ResponsePagePath: '/index.html', ErrorCachingMinTTL: 300 },
         { ErrorCode: 403, ResponseCode: 200, ResponsePagePath: '/index.html', ErrorCachingMinTTL: 300 },
@@ -157,10 +155,7 @@ describe('WebsiteCloudFront', () => {
      * reason the prop is `string[] | false` rather than an optional array.
      */
     test('allowedCountries: false removes the geo restriction entirely', () => {
-      const config = Object.values(
-        synth({ allowedCountries: false }).findResources('AWS::CloudFront::Distribution'),
-      )[0].Properties.DistributionConfig;
-      expect(config.Restrictions).toBeUndefined();
+      expect(distributionConfig(synth({ allowedCountries: false })).Restrictions).toBeUndefined();
     });
 
     test('allowedCountries: [] is rejected rather than silently allowing nothing', () => {
@@ -204,11 +199,9 @@ describe('WebsiteCloudFront', () => {
     });
 
     test('errorResponseTtl is ignored when spaFallback is off', () => {
-      const config = Object.values(
-        synth({ spaFallback: false, errorResponseTtl: cdk.Duration.minutes(5) }).findResources(
-          'AWS::CloudFront::Distribution',
-        ),
-      )[0].Properties.DistributionConfig;
+      const config = distributionConfig(
+        synth({ spaFallback: false, errorResponseTtl: cdk.Duration.minutes(5) }),
+      );
       expect(config.CustomErrorResponses).toBeUndefined();
     });
   });
