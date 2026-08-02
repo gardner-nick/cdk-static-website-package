@@ -1,5 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { StaticWebsite, StaticWebsiteProps } from '../lib/modules/static-website';
 
@@ -201,6 +202,50 @@ describe('StaticWebsite', () => {
         }),
       }),
     });
+  });
+
+  test('bucketProps are forwarded to the origin bucket', () => {
+    const template = synth({
+      bucketProps: {
+        blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+        encryption: s3.BucketEncryption.S3_MANAGED,
+        removalPolicy: cdk.RemovalPolicy.RETAIN,
+      },
+    });
+    template.hasResourceProperties('AWS::S3::Bucket', {
+      PublicAccessBlockConfiguration: {
+        BlockPublicAcls: true,
+        BlockPublicPolicy: true,
+        IgnorePublicAcls: true,
+        RestrictPublicBuckets: true,
+      },
+      BucketEncryption: {
+        ServerSideEncryptionConfiguration: [
+          { ServerSideEncryptionByDefault: { SSEAlgorithm: 'AES256' } },
+        ],
+      },
+    });
+    template.hasResource('AWS::S3::Bucket', { DeletionPolicy: 'Retain' });
+  });
+
+  /**
+   * The one override whose effect is invisible in every other assertion here:
+   * StaticWebsite otherwise always names the bucket `test-bucket-test`, so a
+   * regression in the `false` passthrough would leave the suite green.
+   */
+  test('bucketProps.bucketName: false leaves the name to CloudFormation', () => {
+    synth({ bucketProps: { bucketName: false } }).hasResourceProperties('AWS::S3::Bucket', {
+      BucketName: Match.absent(),
+    });
+  });
+
+  test('omitting bucketProps keeps the historical bucket configuration', () => {
+    const template = synth();
+    template.hasResourceProperties('AWS::S3::Bucket', {
+      BucketName: 'test-bucket-test',
+      BucketEncryption: Match.absent(),
+    });
+    template.hasResource('AWS::S3::Bucket', { DeletionPolicy: 'Delete' });
   });
 
   test('throws when neither acmCertArn nor createAcmCert is set', () => {

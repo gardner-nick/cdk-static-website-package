@@ -3,7 +3,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as route53 from 'aws-cdk-lib/aws-route53';
-import { WebsiteBucket } from './bucket';
+import { WebsiteBucket, WebsiteBucketProps } from './bucket';
 import { WebsiteCloudFront } from './cloudfront';
 import { WebsiteRoute53 } from './route53';
 
@@ -24,6 +24,12 @@ export interface StaticWebsiteProps {
   readonly spaFallback?: boolean;
   /** CloudFront Functions for the default (S3) behavior only. */
   readonly defaultBehaviorFunctionAssociations?: cloudfront.FunctionAssociation[];
+  /**
+   * Origin bucket overrides — encryption, TLS enforcement, public-access
+   * blocking, removal policy, bucket naming. Defaults preserve the historical
+   * behavior; see {@link WebsiteBucketProps}.
+   */
+  readonly bucketProps?: WebsiteBucketProps;
 }
 
 export class StaticWebsite extends Construct {
@@ -52,7 +58,11 @@ export class StaticWebsite extends Construct {
       domainName: props.hostedZone,
     });
 
-    const websiteBucket = new WebsiteBucket(this, `${stackPrefix}-bucket-${envType}`);
+    const websiteBucket = new WebsiteBucket(
+      this,
+      `${stackPrefix}-bucket-${envType}`,
+      props.bucketProps,
+    );
     this.bucket = websiteBucket.bucket;
 
     const websiteCloudFront = new WebsiteCloudFront(this, `${stackPrefix}-distribution-${envType}`, {

@@ -46,7 +46,46 @@ class MySiteStack extends cdk.Stack {
 - **SPA error rewrites:** 403 and 404 from the origin both rewrite to `/index.html` with a 200, which is what client-side routers expect. These are distribution-wide — if you attach additional behaviors (e.g. an `/api/*` path via `distribution.addBehavior`) whose error statuses must reach the viewer untouched, set `spaFallback: false` and scope the fallback to the S3 behavior with a viewer-request function via `defaultBehaviorFunctionAssociations` instead.
 - **`index.html` is the default root object**, so `https://<domain>/` serves the SPA shell without relying on the error rewrites.
 - **Bucket removal policy is `DESTROY`.** Suitable for static site assets redeployed from CI; don't store anything you can't reproduce.
-- **Bucket name = `<stackPrefix>-bucket-<envType>`.** S3 bucket names are globally unique, so pick a `stackPrefix` unlikely to collide.
+- **Bucket name = `<stackPrefix>-bucket-<envType>`.** S3 bucket names are globally unique, so pick a `stackPrefix` unlikely to collide — or set `bucketProps: { bucketName: false }` to let CloudFormation generate one (but see the caveat under [Hardening the bucket](#hardening-the-bucket) before you do).
+- **Public access blocking is `BLOCK_ACLS`,** which blocks public ACLs but still permits a public bucket *policy*. Nothing needs public access when reading through CloudFront OAC, so `bucketProps: { blockPublicAccess: BlockPublicAccess.BLOCK_ALL }` is the stricter choice.
+- **No bucket encryption or TLS enforcement by default.** See `bucketProps` below.
+
+## Hardening the bucket
+
+`bucketProps` forwards to the origin bucket. Every option defaults to the historical behavior, so omitting it changes nothing.
+
+```ts
+import { BlockPublicAccess, BucketEncryption } from 'aws-cdk-lib/aws-s3';
+
+new StaticWebsite(this, 'Site', {
+  stackPrefix: 'mysite',
+  envType: 'prod',
+  hostedZone: 'example.com',
+  acmCertArn: '<arn>',
+  bucketProps: {
+    blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+    encryption: BucketEncryption.S3_MANAGED,
+    enforceSSL: true,
+    removalPolicy: cdk.RemovalPolicy.RETAIN,
+    bucketName: false,
+  },
+});
+```
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `bucketName` | `string \| false` | construct id, lowercased | Explicit name; `false` lets CloudFormation generate one (avoids global-uniqueness collisions, but ties the bucket to the construct path — see below) |
+| `blockPublicAccess` | `s3.BlockPublicAccess` | `BLOCK_ACLS` | `BLOCK_ALL` also denies public bucket policies |
+| `encryption` | `s3.BucketEncryption` | none | e.g. `S3_MANAGED` for SSE-S3 |
+| `enforceSSL` | `boolean` | `false` | Adds a bucket policy denying non-TLS requests |
+| `removalPolicy` | `cdk.RemovalPolicy` | `DESTROY` | `RETAIN` to survive stack deletion |
+| `autoDeleteObjects` | `boolean` | `false` | Empty the bucket on delete; requires `DESTROY` |
+
+### `bucketName: false` ties the bucket to the construct path
+
+A generated name is derived from the CloudFormation logical id, which is derived from the construct path. Renaming `stackPrefix` or `envType` therefore changes the logical id, and CloudFormation responds by **replacing the bucket** — which under the default `removalPolicy: DESTROY` discards whatever was in it. A fixed `bucketName` survives such a rename; a generated one does not.
+
+So `false` is the right choice when you deploy the same construct to several accounts and global uniqueness is the binding constraint, and the wrong choice when `stackPrefix`/`envType` are values you expect to revise. The default (`<stackPrefix>-bucket-<envType>`) is only lowercased, not sanitized: an id containing `_`, or any other character S3 disallows, fails at synth rather than at deploy.
 
 ## Auto-creating the ACM certificate
 
@@ -146,12 +185,31 @@ Composed construct that wires bucket + distribution + DNS record.
 | `wildcard` | `boolean` | no | `false` | Also serve `*.<hostedZone>` from the same distribution (see above) |
 | `spaFallback` | `boolean` | no | `true` | Distribution-wide 403/404 → `/index.html` rewrites; disable when adding non-SPA behaviors |
 | `defaultBehaviorFunctionAssociations` | `cloudfront.FunctionAssociation[]` | no | — | CloudFront Functions attached to the default (S3) behavior only |
+| `bucketProps` | `WebsiteBucketProps` | no | — | Origin bucket overrides — see [Hardening the bucket](#hardening-the-bucket) |
 
 Exposes `bucket: s3.Bucket` and `distribution: cloudfront.Distribution` for further customization.
 
 ### Lower-level constructs
 
 `WebsiteBucket`, `WebsiteCloudFront`, `WebsiteRoute53` are also exported if you want to wire them up yourself.
+
+`WebsiteBucket` takes the same `WebsiteBucketProps` as `bucketProps` above, and is the one worth using standalone — it's the only sub-construct with no domain requirement. Use it when you need a CloudFront distribution this package can't express (no custom domain, a custom `ResponseHeadersPolicy`, a specific price class) but still want the bucket configured consistently:
+
+```ts
+import { WebsiteBucket } from '@gardner-nick/cdk-static-website';
+
+const { bucket } = new WebsiteBucket(this, 'SiteBucket', {
+  blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+  encryption: BucketEncryption.S3_MANAGED,
+  enforceSSL: true,
+  bucketName: false,
+});
+// ...then build your own Distribution over `bucket`.
+```
+
+Note that `WebsiteCloudFront` requires `hostedZone` plus a certificate — it cannot produce a distribution served only from its `*.cloudfront.net` domain.
+
+> **Added in 0.2.0:** `WebsiteBucketProps` and `StaticWebsite`'s `bucketProps`. Purely additive — every default reproduces 0.1.x, so a no-props upgrade synthesizes an identical template.
 
 ## Releasing
 
