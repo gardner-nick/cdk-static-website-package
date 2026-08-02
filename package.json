@@ -1,6 +1,6 @@
 {
   "name": "@gardner-nick/cdk-static-website",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "AWS CDK v2 constructs for static websites: S3 + CloudFront + Route53.",
   "keywords": [
     "aws",

@@ -87,6 +87,48 @@ A generated name is derived from the CloudFormation logical id, which is derived
 
 So `false` is the right choice when you deploy the same construct to several accounts and global uniqueness is the binding constraint, and the wrong choice when `stackPrefix`/`envType` are values you expect to revise. The default (`<stackPrefix>-bucket-<envType>`) is only lowercased, not sanitized: an id containing `_`, or any other character S3 disallows, fails at synth rather than at deploy.
 
+## Security headers
+
+No response headers policy is attached by default, so a site that relies on a Content Security Policy must pass one. `responseHeadersPolicy` attaches to the default (S3) behavior:
+
+```ts
+import { Duration } from 'aws-cdk-lib';
+import {
+  HeadersFrameOption,
+  PriceClass,
+  ResponseHeadersPolicy,
+} from 'aws-cdk-lib/aws-cloudfront';
+
+const securityHeaders = new ResponseHeadersPolicy(this, 'SecurityHeaders', {
+  securityHeadersBehavior: {
+    contentSecurityPolicy: {
+      contentSecurityPolicy: ["default-src 'none'", "script-src 'self'"].join('; '),
+      override: true,
+    },
+    contentTypeOptions: { override: true },
+    frameOptions: { frameOption: HeadersFrameOption.DENY, override: true },
+    strictTransportSecurity: {
+      accessControlMaxAge: Duration.days(365),
+      includeSubdomains: true,
+      override: true,
+    },
+  },
+});
+
+new StaticWebsite(this, 'Site', {
+  stackPrefix: 'mysite',
+  envType: 'prod',
+  hostedZone: 'example.com',
+  acmCertArn: '<arn>',
+  responseHeadersPolicy: securityHeaders,
+  priceClass: PriceClass.PRICE_CLASS_100,
+  allowedCountries: false,
+  errorResponseTtl: Duration.minutes(5),
+});
+```
+
+`allowedCountries: false` is worth calling out: the default is a US/CA allowlist, which is the wrong shape for most public sites but cannot be changed without silently widening access for existing callers.
+
 ## Auto-creating the ACM certificate
 
 If you don't already have a cert, set `createAcmCert: true` and omit `acmCertArn`. The construct creates an `acm.Certificate` validated via DNS against the hosted zone.
@@ -181,11 +223,18 @@ Composed construct that wires bucket + distribution + DNS record.
 | `subDomain` | `string` | no | `''` | Subdomain; empty for apex |
 | `acmCertArn` | `string` | one of | — | Existing ACM cert ARN in `us-east-1` |
 | `createAcmCert` | `boolean` | one of | `false` | Create a new DNS-validated cert (stack must be in `us-east-1`) |
-| `allowedCountries` | `string[]` | no | `['US', 'CA']` | CloudFront geo-allowlist |
+| `allowedCountries` | `string[] \| false` | no | `['US', 'CA']` | CloudFront geo-allowlist; `false` serves every country |
 | `wildcard` | `boolean` | no | `false` | Also serve `*.<hostedZone>` from the same distribution (see above) |
 | `spaFallback` | `boolean` | no | `true` | Distribution-wide 403/404 → `/index.html` rewrites; disable when adding non-SPA behaviors |
 | `defaultBehaviorFunctionAssociations` | `cloudfront.FunctionAssociation[]` | no | — | CloudFront Functions attached to the default (S3) behavior only |
 | `bucketProps` | `WebsiteBucketProps` | no | — | Origin bucket overrides — see [Hardening the bucket](#hardening-the-bucket) |
+| `responseHeadersPolicy` | `cloudfront.IResponseHeadersPolicy` | no | — | Security headers / CSP on the default behavior — see [Security headers](#security-headers) |
+| `priceClass` | `cloudfront.PriceClass` | no | CloudFront's | `PRICE_CLASS_100` (NA + EU) is cheapest |
+| `httpVersion` | `cloudfront.HttpVersion` | no | CloudFront's | e.g. `HTTP2_AND_3` |
+| `cachePolicy` | `cloudfront.ICachePolicy` | no | CloudFront's | e.g. `CACHING_OPTIMIZED` |
+| `allowedMethods` | `cloudfront.AllowedMethods` | no | CloudFront's | e.g. `ALLOW_GET_HEAD_OPTIONS` |
+| `compress` | `boolean` | no | CloudFront's | Automatic object compression |
+| `errorResponseTtl` | `cdk.Duration` | no | — | How long the SPA fallback response is cached |
 
 Exposes `bucket: s3.Bucket` and `distribution: cloudfront.Distribution` for further customization.
 
@@ -210,6 +259,8 @@ const { bucket } = new WebsiteBucket(this, 'SiteBucket', {
 Note that `WebsiteCloudFront` requires `hostedZone` plus a certificate — it cannot produce a distribution served only from its `*.cloudfront.net` domain.
 
 > **Added in 0.2.0:** `WebsiteBucketProps` and `StaticWebsite`'s `bucketProps`. Purely additive — every default reproduces 0.1.x, so a no-props upgrade synthesizes an identical template.
+
+> **Added in 0.3.0:** distribution overrides — `responseHeadersPolicy`, `priceClass`, `httpVersion`, `cachePolicy`, `allowedMethods`, `compress`, `errorResponseTtl` — plus `allowedCountries: false` to drop the geo restriction. Additive on the same terms: verified against the published 0.2.0 build, a no-props `StaticWebsite` synthesizes an identical template.
 
 ## Releasing
 

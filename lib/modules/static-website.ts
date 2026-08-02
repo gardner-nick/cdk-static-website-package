@@ -1,4 +1,5 @@
 import { Construct } from 'constructs';
+import * as cdk from 'aws-cdk-lib';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
@@ -12,7 +13,8 @@ export interface StaticWebsiteProps {
   readonly envType: string;
   readonly hostedZone: string;
   readonly subDomain?: string;
-  readonly allowedCountries?: string[];
+  /** Countries allowed to reach the distribution; `false` serves every country. @default ['US', 'CA'] */
+  readonly allowedCountries?: string[] | false;
   readonly acmCertArn?: string;
   readonly createAcmCert?: boolean;
   readonly wildcard?: boolean;
@@ -30,6 +32,19 @@ export interface StaticWebsiteProps {
    * behavior; see {@link WebsiteBucketProps}.
    */
   readonly bucketProps?: WebsiteBucketProps;
+  /**
+   * Response headers policy for the default behavior — the hook for a Content
+   * Security Policy. Nothing is attached by default.
+   */
+  readonly responseHeadersPolicy?: cloudfront.IResponseHeadersPolicy;
+  /** Edge locations to serve from; `PRICE_CLASS_100` (NA + EU) is cheapest. */
+  readonly priceClass?: cloudfront.PriceClass;
+  readonly httpVersion?: cloudfront.HttpVersion;
+  readonly cachePolicy?: cloudfront.ICachePolicy;
+  readonly allowedMethods?: cloudfront.AllowedMethods;
+  readonly compress?: boolean;
+  /** How long CloudFront caches the SPA fallback response. */
+  readonly errorResponseTtl?: cdk.Duration;
 }
 
 export class StaticWebsite extends Construct {
@@ -76,6 +91,13 @@ export class StaticWebsite extends Construct {
       wildcard: props.wildcard,
       spaFallback: props.spaFallback,
       defaultBehaviorFunctionAssociations: props.defaultBehaviorFunctionAssociations,
+      responseHeadersPolicy: props.responseHeadersPolicy,
+      priceClass: props.priceClass,
+      httpVersion: props.httpVersion,
+      cachePolicy: props.cachePolicy,
+      allowedMethods: props.allowedMethods,
+      compress: props.compress,
+      errorResponseTtl: props.errorResponseTtl,
     });
     this.distribution = websiteCloudFront.distribution;
     this.certificate = websiteCloudFront.certificate;

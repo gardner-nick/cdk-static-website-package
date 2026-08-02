@@ -248,6 +248,37 @@ describe('StaticWebsite', () => {
     template.hasResource('AWS::S3::Bucket', { DeletionPolicy: 'Delete' });
   });
 
+  test('distribution props are forwarded to the CloudFront behavior', () => {
+    const app = new cdk.App();
+    const stack = new cdk.Stack(app, 'TestStack', { env: TEST_ENV });
+    const policy = new cloudfront.ResponseHeadersPolicy(stack, 'Headers', {
+      securityHeadersBehavior: {
+        contentSecurityPolicy: { contentSecurityPolicy: "default-src 'none'", override: true },
+      },
+    });
+    new StaticWebsite(stack, 'Site', {
+      stackPrefix: 'test',
+      envType: 'test',
+      hostedZone: 'example.com',
+      subDomain: 'www',
+      acmCertArn: 'arn:aws:acm:us-east-1:111122223333:certificate/abcd-1234',
+      responseHeadersPolicy: policy,
+      priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
+      httpVersion: cloudfront.HttpVersion.HTTP2_AND_3,
+      allowedCountries: false,
+      errorResponseTtl: cdk.Duration.minutes(5),
+    });
+    const template = Template.fromStack(stack);
+    const config = Object.values(template.findResources('AWS::CloudFront::Distribution'))[0]
+      .Properties.DistributionConfig;
+
+    expect(config.DefaultCacheBehavior.ResponseHeadersPolicyId).toBeDefined();
+    expect(config.PriceClass).toEqual('PriceClass_100');
+    expect(config.HttpVersion).toEqual('http2and3');
+    expect(config.Restrictions).toBeUndefined();
+    expect(config.CustomErrorResponses[0].ErrorCachingMinTTL).toEqual(300);
+  });
+
   test('throws when neither acmCertArn nor createAcmCert is set', () => {
     expect(() => synth({ acmCertArn: undefined })).toThrow(
       /exactly one of `acmCertArn` or `createAcmCert: true`/,
