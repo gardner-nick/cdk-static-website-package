@@ -7,6 +7,14 @@ export interface WebsiteBucketProps {
    * Explicit bucket name. S3 names are globally unique, so a fixed name can
    * collide with another account's bucket and fail the deploy. Pass `false` to
    * let CloudFormation generate a name derived from the stack and logical id.
+   *
+   * `false` trades one failure mode for another: the generated name follows the
+   * construct path, so renaming the construct id (via `stackPrefix`/`envType` on
+   * `StaticWebsite`) changes the logical id and CloudFormation *replaces* the
+   * bucket — discarding its contents under the default `removalPolicy: DESTROY`.
+   *
+   * The default is only lowercased, not sanitized: an id containing `_` or other
+   * characters S3 disallows fails at synth. Ids must already be legal S3 names.
    * @default the construct id, lowercased
    */
   readonly bucketName?: string | false;

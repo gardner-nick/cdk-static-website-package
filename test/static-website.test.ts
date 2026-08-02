@@ -228,6 +228,17 @@ describe('StaticWebsite', () => {
     template.hasResource('AWS::S3::Bucket', { DeletionPolicy: 'Retain' });
   });
 
+  /**
+   * The one override whose effect is invisible in every other assertion here:
+   * StaticWebsite otherwise always names the bucket `test-bucket-test`, so a
+   * regression in the `false` passthrough would leave the suite green.
+   */
+  test('bucketProps.bucketName: false leaves the name to CloudFormation', () => {
+    synth({ bucketProps: { bucketName: false } }).hasResourceProperties('AWS::S3::Bucket', {
+      BucketName: Match.absent(),
+    });
+  });
+
   test('omitting bucketProps keeps the historical bucket configuration', () => {
     const template = synth();
     template.hasResourceProperties('AWS::S3::Bucket', {
