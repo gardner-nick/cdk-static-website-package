@@ -25,6 +25,19 @@ This is a published npm package (`@gardner-nick/cdk-static-website`) of AWS CDK 
 - `WebsiteRoute53` (`lib/modules/route53.ts`) — A-record alias to the distribution. Accepts an optional `hostedZoneRef` to avoid a duplicate `HostedZone.fromLookup`.
 - `StaticWebsite` (`lib/modules/static-website.ts`) — the public surface most consumers use. Does one `HostedZone.fromLookup` and threads the `IHostedZone` to both `WebsiteCloudFront` (for DNS-validated cert) and `WebsiteRoute53` (for the A-record) via `hostedZoneRef`, so there's only one lookup per stack.
 
+### Prop forwarding: flat vs nested
+
+`StaticWebsite` exposes its children's options two different ways, and the split is deliberate:
+
+- **Bucket options are nested** behind a single `bucketProps?: WebsiteBucketProps` (added in 0.2.0).
+- **Distribution options are flat** — `responseHeadersPolicy`, `priceClass`, `httpVersion`, `cachePolicy`, `allowedMethods`, `compress`, `errorResponseTtl`, plus the older `allowedCountries`/`spaFallback`/`wildcard`/`defaultBehaviorFunctionAssociations` (added in 0.3.0).
+
+The distribution is what consumers actually tune — a CSP, a cheaper price class, dropping the geo restriction are all common, whereas bucket overrides are the rare hardening case. Burying the common ones under `distributionProps` would cost every caller a nesting level to save the rare caller nothing. The bucket's options are also cohesive enough to name as a group; the distribution's aren't.
+
+The cost is real: each flat prop is declared in **both** `WebsiteCloudFrontProps` and `StaticWebsiteProps` and forwarded by name in the `WebsiteCloudFront` constructor call, so adding one means four edits (both interfaces, the forwarding call, the README table). Keep the declaration order identical in both interfaces — that is what makes a missed forward visible in review. Mirror the leaf's `@default` tags into `StaticWebsiteProps` rather than cross-linking: both interfaces ship in the published `.d.ts`, and `StaticWebsite` is the one consumers hover.
+
+Don't convert either side to match the other without a reason to; the asymmetry is the design, not drift.
+
 ### Cert mode invariant
 
 Both `StaticWebsite` and `WebsiteCloudFront` enforce **exactly one** of `acmCertArn` (import existing) or `createAcmCert: true` (create new) at synth time. The check is `if (hasArn === wantsCreate) throw` — covers both "neither" and "both". When changing cert handling, keep this invariant in both constructs and the two corresponding `throws` tests.
