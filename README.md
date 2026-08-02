@@ -264,11 +264,13 @@ Note that `WebsiteCloudFront` requires `hostedZone` plus a certificate — it ca
 
 ## Releasing
 
-Tag pushes matching `v*.*.*` trigger `.github/workflows/publish.yml`, which builds, tests, and publishes to npm with provenance.
+Releases are driven by the version in `package.json`, not by pushing a tag. Bump it in the PR; once CI passes on `main`, `.github/workflows/publish.yml` builds, tests, publishes to npm with provenance, and then creates the `v*.*.*` tag itself.
 
 ```sh
-npm version patch   # or minor / major
-git push --follow-tags
+# in your release PR — commits package.json + package-lock.json, no tag
+npm version patch --no-git-tag-version   # or minor / major
 ```
 
-Requires the `NPM_TOKEN` repo secret (npmjs.com → Access Tokens → Automation token). The workflow refuses to publish if the tag and `package.json` version disagree.
+Publishing is skipped when `v<version>` already exists on the remote, which is what makes the workflow safe to run after every `main` push. The same guard means **you should not create the tag yourself** — a hand-pushed tag makes the subsequent publish a silent no-op.
+
+Auth uses npm [Trusted Publishing](https://docs.npmjs.com/trusted-publishers) via OIDC, tied to the `prod` GitHub environment; no `NPM_TOKEN` secret is involved. A missed release can be re-run from the Actions tab (`workflow_dispatch`).

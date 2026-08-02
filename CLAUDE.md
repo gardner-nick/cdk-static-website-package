@@ -39,11 +39,17 @@ Tests use `aws-cdk-lib/assertions` (`Template.fromStack` + `Match`) to assert on
 
 ## Publishing
 
-`.github/workflows/publish.yml` runs on `v*.*.*` tag pushes:
-1. Verifies the tag matches `package.json` version (fails fast if not).
-2. `npm ci` → `npm run build` → `npm test`.
-3. `npm publish --provenance` using the `NPM_TOKEN` repo secret.
+**The version in `package.json` on `main` is what triggers a release, and the tag is created by CI at the end — not by you.** `.github/workflows/publish.yml` runs on `workflow_run` after CI succeeds on `main` (or via `workflow_dispatch`):
 
-Release flow: `npm version patch|minor|major && git push --follow-tags`.
+1. Reads the version from `package.json` and checks whether `refs/tags/v<version>` already exists on the remote.
+2. **If the tag exists, every remaining step is skipped** — that is the idempotency guard that lets this run after each `main` push.
+3. Otherwise `npm ci` → `npm run build` → `npm test` → `npm publish --provenance --access public`.
+4. Creates and pushes `v<version>` itself.
+
+Release flow: bump `package.json` (and `package-lock.json`) in the PR, merge to `main`, and let CI publish.
+
+Do **not** run `npm version` or push a `v*.*.*` tag by hand. Because step 2 skips when the tag is already present, tagging first doesn't just duplicate the tag — it makes the publish a silent no-op, and the release looks green while nothing ships. If a publish is genuinely missed, re-run via `workflow_dispatch`.
+
+Auth is **OIDC Trusted Publishing**, configured on npmjs.com against the `prod` GitHub environment — there is no `NPM_TOKEN` secret, and provenance is implied. This needs npm >= 11.5.1, which is why the workflow installs `npm@^11.5.1` over the version bundled with Node 22; the pin is to a major because `npm@latest` moved to 12.x and broke the step with `EBADENGINE`.
 
 `.npmignore` keeps `.ts` sources out of the published tarball (only `.d.ts` + `.js` from `lib/` ship, per `package.json` `files`).
