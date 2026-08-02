@@ -55,6 +55,21 @@ describe('WebsiteCloudFront', () => {
       });
     });
 
+    /**
+     * Not symmetrical, and the asymmetry is the point: CDK materialises its own
+     * `cachePolicy` and `compress` defaults into the template even when the
+     * props are omitted, while `allowedMethods` is left off entirely. Pinning
+     * the emitted values is what makes the override tests below meaningful —
+     * an override asserting the *default* value would pass while unwired.
+     */
+    test('cache policy and compression fall through to CDK’s defaults', () => {
+      const behavior = defaultBehavior(synth());
+      // The managed CACHING_OPTIMIZED policy id — CDK's default, not ours.
+      expect(behavior.CachePolicyId).toEqual('658327ea-f89d-4fab-a63d-7e88639e58f6');
+      expect(behavior.Compress).toBe(true);
+      expect(behavior.AllowedMethods).toBeUndefined();
+    });
+
     test('SPA fallback carries no explicit TTL', () => {
       const config = Object.values(synth().findResources('AWS::CloudFront::Distribution'))[0]
         .Properties.DistributionConfig;
@@ -106,18 +121,23 @@ describe('WebsiteCloudFront', () => {
       });
     });
 
+    /**
+     * Each value here is deliberately *not* CDK's default (see the defaults
+     * block): CACHING_OPTIMIZED and `compress: true` are what an unwired prop
+     * would produce anyway, so asserting those would prove nothing.
+     */
     test('cachePolicy, allowedMethods and compress reach the default behavior', () => {
       const behavior = defaultBehavior(
         synth({
-          cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
-          compress: true,
+          compress: false,
         }),
       );
-      // The managed CACHING_OPTIMIZED policy id.
-      expect(behavior.CachePolicyId).toEqual('658327ea-f89d-4fab-a63d-7e88639e58f6');
+      // The managed CACHING_DISABLED policy id.
+      expect(behavior.CachePolicyId).toEqual('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
       expect(behavior.AllowedMethods).toEqual(['GET', 'HEAD', 'OPTIONS']);
-      expect(behavior.Compress).toBe(true);
+      expect(behavior.Compress).toBe(false);
     });
 
     test('errorResponseTtl applies to every SPA fallback response', () => {
@@ -145,6 +165,42 @@ describe('WebsiteCloudFront', () => {
 
     test('allowedCountries: [] is rejected rather than silently allowing nothing', () => {
       expect(() => synth({ allowedCountries: [] })).toThrow();
+    });
+
+    /**
+     * The only interaction these props introduce: `responseHeadersPolicy` and
+     * `defaultBehaviorFunctionAssociations` both attach to the same default
+     * behavior. They're independent fields, so this is a regression guard
+     * against one clobbering the other rather than a suspected bug.
+     */
+    test('responseHeadersPolicy coexists with a function association', () => {
+      const app = new cdk.App();
+      const stack = new cdk.Stack(app, 'TestStack', { env: TEST_ENV });
+      const bucket = new s3.Bucket(stack, 'OriginBucket');
+      const policy = new cloudfront.ResponseHeadersPolicy(stack, 'Headers', {
+        securityHeadersBehavior: {
+          contentSecurityPolicy: { contentSecurityPolicy: "default-src 'none'", override: true },
+        },
+      });
+      const fn = new cloudfront.Function(stack, 'Rewrite', {
+        code: cloudfront.FunctionCode.fromInline('function handler(e) { return e.request; }'),
+      });
+      new WebsiteCloudFront(stack, 'Dist', {
+        bucket,
+        hostedZone: 'example.com',
+        acmCertArn: CERT_ARN,
+        responseHeadersPolicy: policy,
+        defaultBehaviorFunctionAssociations: [
+          { function: fn, eventType: cloudfront.FunctionEventType.VIEWER_REQUEST },
+        ],
+      });
+
+      const behavior = defaultBehavior(Template.fromStack(stack));
+      expect(behavior.ResponseHeadersPolicyId).toBeDefined();
+      // FunctionARN is an unresolved Fn::GetAtt at synth time.
+      expect(behavior.FunctionAssociations).toEqual([
+        { EventType: 'viewer-request', FunctionARN: expect.anything() },
+      ]);
     });
 
     test('errorResponseTtl is ignored when spaFallback is off', () => {
