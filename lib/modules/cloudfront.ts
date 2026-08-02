@@ -52,7 +52,11 @@ export interface WebsiteCloudFrontProps {
   readonly httpVersion?: cloudfront.HttpVersion;
   /** @default CachePolicy.CACHING_OPTIMIZED — CloudFront's own default */
   readonly cachePolicy?: cloudfront.ICachePolicy;
-  /** @default AllowedMethods.ALLOW_GET_HEAD — CloudFront's own default */
+  /**
+   * Methods the default behavior accepts. The origin here is always a static
+   * bucket, so anything past `ALLOW_GET_HEAD_OPTIONS` has nothing to reach.
+   * @default AllowedMethods.ALLOW_GET_HEAD — CloudFront's own default
+   */
   readonly allowedMethods?: cloudfront.AllowedMethods;
   /** Compress objects automatically. @default true — CloudFront's own default */
   readonly compress?: boolean;

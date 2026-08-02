@@ -32,18 +32,40 @@ export interface StaticWebsiteProps {
    * behavior; see {@link WebsiteBucketProps}.
    */
   readonly bucketProps?: WebsiteBucketProps;
+  // Distribution overrides, forwarded verbatim to `WebsiteCloudFront` — see
+  // `WebsiteCloudFrontProps`. Each defaults to `undefined`, which leaves the
+  // property off the synthesized template so CloudFront's own default applies.
+
   /**
    * Response headers policy for the default behavior — the hook for a Content
-   * Security Policy. Nothing is attached by default.
+   * Security Policy and the other security headers. Nothing is attached by
+   * default, so a site relying on a CSP must pass one.
+   * @default none
    */
   readonly responseHeadersPolicy?: cloudfront.IResponseHeadersPolicy;
-  /** Edge locations to serve from; `PRICE_CLASS_100` (NA + EU) is cheapest. */
+  /**
+   * Edge locations to serve from. `PRICE_CLASS_100` (NA + EU) is the cheapest.
+   * @default PriceClass.PRICE_CLASS_ALL — CloudFront's own default
+   */
   readonly priceClass?: cloudfront.PriceClass;
+  /** @default HttpVersion.HTTP2 — CloudFront's own default */
   readonly httpVersion?: cloudfront.HttpVersion;
+  /** @default CachePolicy.CACHING_OPTIMIZED — CloudFront's own default */
   readonly cachePolicy?: cloudfront.ICachePolicy;
+  /**
+   * Methods the default behavior accepts. The origin here is always a static
+   * bucket, so anything past `ALLOW_GET_HEAD_OPTIONS` has nothing to reach.
+   * @default AllowedMethods.ALLOW_GET_HEAD — CloudFront's own default
+   */
   readonly allowedMethods?: cloudfront.AllowedMethods;
+  /** Compress objects automatically. @default true — CloudFront's own default */
   readonly compress?: boolean;
-  /** How long CloudFront caches the SPA fallback response. */
+  /**
+   * How long CloudFront caches the SPA fallback response. Without a TTL an
+   * error response is cached at CloudFront's default of 5 minutes anyway; set
+   * this to make the window explicit. Ignored when `spaFallback` is false.
+   * @default none — CloudFront's own error-caching default applies
+   */
   readonly errorResponseTtl?: cdk.Duration;
 }
 
